@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Screen Monitor — Multi Device</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a0a; color: #e0e0e0;
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+        }
+        .header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 8px 14px; background: #141414;
+            border-bottom: 1px solid #222; flex-shrink: 0; flex-wrap: wrap; gap: 6px;
+        }
+        .header h1 { font-size: 14px; font-weight: 600; color: #fff; }
+        .header-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .status-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: #555; flex-shrink: 0;
+        }
+        .status-dot.ok { background: #4caf50; box-shadow: 0 0 6px rgba(76,175,80,0.5); }
+        .status-dot.err { background: #f44336; }
+        .stat {
+            font-size: 10px; color: #777;
+            font-family: 'Courier New', monospace;
+            background: #1a1a1a; padding: 2px 6px;
+            border-radius: 3px; border: 1px solid #2a2a2a;
+        }
+        .stat.hidden-stat { display: none !important; }
+        #statusText { font-size: 11px; color: #888; }
+        .device-bar {
+            display: flex; align-items: center; gap: 6px;
+            padding: 6px 12px; background: #111;
+            border-bottom: 1px solid #222; flex-shrink: 0; flex-wrap: wrap;
+        }
+        .device-bar label { font-size: 11px; color: #888; }
+        .device-bar input, .device-bar select {
+            background: #1a1a1a; border: 1px solid #333; color: #eee;
+            padding: 5px 8px; border-radius: 4px; font-size: 12px;
+            min-width: 100px; outline: none;
+        }
+        .device-bar input:focus, .device-bar select:focus { border-color: #4caf50; }
+        .btn-sm {
+            padding: 5px 10px; border: 1px solid #333; border-radius: 4px;
+            background: #1e1e1e; color: #bbb; font-size: 11px; cursor: pointer;
+        }
+        .btn-sm:hover { background: #2a2a2a; }
+        .btn-sm.primary { background: #1565c0; border-color: #1565c0; color: #fff; }
+        .btn-sm.on { background: #2e7d32; border-color: #2e7d32; color: #fff; }
+        .main-area { flex: 1; display: flex; min-height: 0; position: relative; }
+        .canvas-container {
+            flex: 1; display: flex; align-items: center; justify-content: center;
+            position: relative; background: #000; overflow: hidden; min-height: 0;
+            touch-action: none;
+        }
+        #screenCanvas { display: block; max-width: 100%; max-height: 100%; cursor: crosshair; }
+        .overlay {
+            position: absolute; inset: 0;
+            background: rgba(0,0,0,0.88);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 5; transition: opacity 0.3s; pointer-events: none;
+        }
+        .overlay.hidden { opacity: 0; }
+        .overlay-content { text-align: center; padding: 20px; }
+        .spinner {
+            width: 32px; height: 32px;
+            border: 3px solid #333; border-top-color: #4caf50;
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+            margin: 0 auto 12px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .overlay-content p { color: #777; font-size: 12px; }
+        .admin-panel {
+            width: 280px; background: #121212; border-left: 1px solid #222;
+            display: none; flex-direction: column; flex-shrink: 0; overflow: hidden;
+        }
+        .admin-panel.open { display: flex; }
+        .admin-panel h3 {
+            font-size: 12px; padding: 10px 12px; border-bottom: 1px solid #222;
+            color: #aaa; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .admin-list { flex: 1; overflow-y: auto; padding: 8px; }
+        .admin-card {
+            background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 6px;
+            padding: 10px; margin-bottom: 8px; cursor: pointer; transition: border 0.15s;
+        }
+        .admin-card:hover { border-color: #555; }
+        .admin-card.active { border-color: #4caf50; }
+        .admin-card .id { font-size: 13px; font-weight: 600; color: #fff; }
+        .admin-card .meta { font-size: 11px; color: #888; margin-top: 4px; line-height: 1.4; }
+        .admin-card .dot {
+            display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+            background: #4caf50; margin-right: 4px;
+        }
+        .controls {
+            display: flex; align-items: center; gap: 5px;
+            padding: 6px 12px; background: #141414;
+            border-top: 1px solid #222; flex-shrink: 0; flex-wrap: wrap;
+        }
+        .btn {
+            padding: 4px 10px; border: 1px solid #333; border-radius: 3px;
+            background: #1e1e1e; color: #bbb; font-size: 11px; cursor: pointer;
+        }
+        .btn:hover { background: #2a2a2a; }
+        .btn.on { background: #1565c0; border-color: #1565c0; color: #fff; }
+        .btn-start {
+            padding: 5px 16px; border: none; border-radius: 4px;
+            background: #2e7d32; color: #fff; font-size: 12px; font-weight: 600; cursor: pointer;
+        }
+        .btn-start.active { background: #c62828; }
+        .ctrl-btn {
+            padding: 4px 10px; border: 1px solid #444; border-radius: 3px;
+            background: #222; color: #ccc; font-size: 11px; cursor: pointer; min-width: 36px;
+        }
+        .ctrl-btn:hover { background: #333; border-color: #666; }
+        .ctrl-btn:active { background: #1565c0; }
+        .spacer { flex: 1; }
+        .online-list { font-size: 10px; color: #666; }
+        .online-list span { color: #4caf50; margin-right: 4px; }
+        @media (max-width: 700px) {
+            .admin-panel { position: absolute; right: 0; top: 0; bottom: 0; z-index: 20; box-shadow: -4px 0 20px rgba(0,0,0,0.5); }
+            .header h1 { font-size: 12px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Screen Monitor</h1>
+        <div class="header-right">
+            <div class="status-dot" id="dot"></div>
+            <span id="statusText">Connecting...</span>
+            <span class="stat" id="fpsStat">-- fps</span>
+            <span class="stat" id="frameStat">0 frames</span>
+            <span class="stat" id="resStat">--</span>
+            <span class="stat" id="latencyStat">lat: --</span>
+        </div>
+    </div>
+
+    <div class="device-bar">
+        <label>Device ID:</label>
+        <input type="text" id="deviceIdInput" placeholder="e.g. phone1" maxlength="64" autocomplete="off" />
+        <button class="btn-sm primary" id="btnSelect">Watch</button>
+        <select id="deviceSelect"><option value="">— Online —</option></select>
+        <button class="btn-sm" id="btnRefresh" title="Refresh">↻</button>
+        <button class="btn-sm" id="btnHideStats" title="Hide network stats">Hide stats</button>
+        <span class="online-list" id="onlineHint"></span>
+    </div>
+
+    <div class="main-area">
+        <div class="canvas-container" id="canvasWrap">
+            <canvas id="screenCanvas"></canvas>
+            <div class="overlay" id="overlay">
+                <div class="overlay-content">
+                    <div class="spinner"></div>
+                    <p id="overlayText">Enter Device ID and tap Watch</p>
+                </div>
+            </div>
+        </div>
+        </div>
+
+    <div class="controls">
+        <button class="btn-start" id="btnStream">START</button>
+        <button class="ctrl-btn" id="btnBack" title="Back">◀</button>
+        <button class="ctrl-btn" id="btnHome" title="Home">●</button>
+        <button class="ctrl-btn" id="btnRecents" title="Recents">■</button>
+        <button class="ctrl-btn" id="btnNotif" title="Notifications">🔔</button>
+        <button class="ctrl-btn" id="btnSwipeLeft" title="Swipe left">←</button>
+        <button class="ctrl-btn" id="btnSwipeRight" title="Swipe right">→</button>
+        <button class="ctrl-btn" id="btnSwipeUp" title="Swipe up">↑</button>
+        <button class="ctrl-btn" id="btnSwipeDown" title="Swipe down">↓</button>
+        <button class="btn" id="btnControl" title="Enable touch control">Control OFF</button>
+        <button class="btn" id="btnFs">Fullscreen</button>
+        <button class="btn on" id="btnFit">Fit</button>
+        <button class="btn" id="btnStretch">Stretch</button>
+        <span class="spacer"></span>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+    (() => {
+        'use strict';
+
+        const canvas = document.getElementById('screenCanvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+        const overlay = document.getElementById('overlay');
+        const overlayText = document.getElementById('overlayText');
+        const dot = document.getElementById('dot');
+        const statusText = document.getElementById('statusText');
+        const fpsStat = document.getElementById('fpsStat');
+        const frameStat = document.getElementById('frameStat');
+        const resStat = document.getElementById('resStat');
+        const latencyStat = document.getElementById('latencyStat');
+        const btnStream = document.getElementById('btnStream');
+        const deviceIdInput = document.getElementById('deviceIdInput');
+        const deviceSelect = document.getElementById('deviceSelect');
+        const onlineHint = document.getElementById('onlineHint');
+        const canvasWrap = document.getElementById('canvasWrap');
+        const btnControl = document.getElementById('btnControl');
+
+        let displayMode = 'fit';
+        let isStreaming = false;
+        let controlEnabled = false;
+        let statsHidden = false;
+        let frameCount = 0;
+        let lastFrameTime = 0;
+        let currentDeviceId = '';
+        let fpsWindow = [];
+        let currentImage = null;
+        let needsDraw = false;
+        let lastDevices = [];
+
+        // Pointer tracking for swipe (mouse + finger)
+        let pointerDown = false;
+        let startX = 0, startY = 0, startNormX = 0, startNormY = 0;
+        let lastNormX = 0, lastNormY = 0;
+        let startTime = 0;
+
+        try {
+            const params = new URLSearchParams(location.search);
+            const qid = params.get('id');
+            const saved = qid || localStorage.getItem('monitor_deviceId');
+            if (saved) { deviceIdInput.value = saved; currentDeviceId = saved; }
+        } catch (_) {}
+
+        const socket = io(window.location.origin, {
+            transports: ['websocket', 'polling'],
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000
+        });
+
+        socket.on('connect', () => {
+            socket.emit('register-dashboard');
+            setStatus('ok', 'Connected');
+            if (currentDeviceId) selectDevice(currentDeviceId);
+        });
+
+        socket.on('disconnect', () => {
+            setStatus('err', 'Disconnected');
+            overlay.classList.remove('hidden');
+            overlayText.textContent = 'Connection lost...';
+        });
+
+        socket.on('connect_error', () => setStatus('err', 'Connection error'));
+
+        socket.on('device-list', (data) => {
+            lastDevices = (data && data.devices) || [];
+            updateDeviceSelect(lastDevices);
+            onlineHint.innerHTML = lastDevices.map(d =>
+                `<span>● ${escapeHtml(d.deviceId)}</span>`
+            ).join('');
+        });
+
+        socket.on('android-status', (data) => {
+            if (data.deviceId && data.deviceId !== currentDeviceId) return;
+            if (data.connected) {
+                setStatus('ok', 'Online: ' + (data.deviceId || currentDeviceId));
+                if (isStreaming) overlay.classList.add('hidden');
+                else {
+                    overlay.classList.remove('hidden');
+                    overlayText.textContent = 'Device online — press START';
+                }
+            } else {
+                setStatus('ok', 'Waiting: ' + (currentDeviceId || '—'));
+                overlay.classList.remove('hidden');
+                overlayText.textContent = currentDeviceId
+                    ? 'Waiting for "' + currentDeviceId + '"...'
+                    : 'Enter Device ID and tap Watch';
+            }
+        });
+
+        socket.on('frame', (base64Data) => {
+            if (!isStreaming) return;
+            frameCount++;
+            const now = performance.now();
+            fpsWindow.push(now);
+            while (fpsWindow.length > 0 && fpsWindow[0] < now - 2000) fpsWindow.shift();
+
+            if (now - lastFrameTime > 500) {
+                lastFrameTime = now;
+                const fps = fpsWindow.length > 1
+                    ? ((fpsWindow.length - 1) / ((fpsWindow[fpsWindow.length-1] - fpsWindow[0]) / 1000)).toFixed(1)
+                    : '0';
+                fpsStat.textContent = fps + ' fps';
+                frameStat.textContent = frameCount + ' frames';
+                latencyStat.textContent = 'lat: ' + (fps !== '0' ? Math.round(1000 / parseFloat(fps)) : '--') + 'ms';
+            }
+
+            const frameImg = new Image();
+            frameImg.onload = () => {
+                currentImage = frameImg;
+                needsDraw = true;
+                if (canvas.width !== frameImg.naturalWidth || canvas.height !== frameImg.naturalHeight) {
+                    canvas.width = frameImg.naturalWidth;
+                    canvas.height = frameImg.naturalHeight;
+                    resStat.textContent = frameImg.naturalWidth + 'x' + frameImg.naturalHeight;
+                    resizeCanvas();
+                }
+            };
+            frameImg.src = 'data:image/jpeg;base64,' + base64Data;
+            if (!overlay.classList.contains('hidden')) overlay.classList.add('hidden');
+        });
+
+        function renderLoop() {
+            requestAnimationFrame(renderLoop);
+            if (needsDraw && currentImage) {
+                ctx.drawImage(currentImage, 0, 0);
+                needsDraw = false;
+            }
+        }
+
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            const cw = container.clientWidth;
+            const ch = container.clientHeight;
+            if (canvas.width === 0 || canvas.height === 0) return;
+            if (displayMode === 'stretch') {
+                canvas.style.width = cw + 'px';
+                canvas.style.height = ch + 'px';
+            } else {
+                const aspect = canvas.width / canvas.height;
+                const ca = cw / ch;
+                if (aspect > ca) {
+                    canvas.style.width = cw + 'px';
+                    canvas.style.height = Math.round(cw / aspect) + 'px';
+                } else {
+                    canvas.style.height = ch + 'px';
+                    canvas.style.width = Math.round(ch * aspect) + 'px';
+                }
+            }
+        }
+        window.addEventListener('resize', resizeCanvas);
+        document.addEventListener('fullscreenchange', resizeCanvas);
+
+        // ===== Control: map pointer to normalized coords =====
+        function canvasNorm(clientX, clientY) {
+            const rect = canvas.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return null;
+            const x = (clientX - rect.left) / rect.width;
+            const y = (clientY - rect.top) / rect.height;
+            if (x < 0 || x > 1 || y < 0 || y > 1) return null;
+            return { x, y };
+        }
+
+        function sendControl(payload) {
+            if (!currentDeviceId) return;
+            socket.emit('control', payload);
+        }
+
+        function onPointerDown(e) {
+            if (!controlEnabled || !isStreaming) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const p = e.touches ? e.touches[0] : e;
+            const n = canvasNorm(p.clientX, p.clientY);
+            if (!n) return;
+            pointerDown = true;
+            startX = p.clientX; startY = p.clientY;
+            startNormX = n.x; startNormY = n.y;
+            startTime = Date.now();
+            lastNormX = n.x; lastNormY = n.y;
+        }
+
+        function onPointerMove(e) {
+            if (!controlEnabled || !pointerDown) return;
+            e.preventDefault();
+            const p = e.touches ? e.touches[0] : e;
+            const n = canvasNorm(p.clientX, p.clientY);
+            if (n) { lastNormX = n.x; lastNormY = n.y; }
+        }
+
+        function onPointerUp(e) {
+            if (!controlEnabled || !pointerDown) return;
+            e.preventDefault();
+            e.stopPropagation();
+            pointerDown = false;
+            const p = e.changedTouches ? e.changedTouches[0] : e;
+            let n = canvasNorm(p.clientX, p.clientY);
+            if (!n) n = { x: lastNormX, y: lastNormY };
+
+            const dx = (p.clientX || 0) - startX;
+            const dy = (p.clientY || 0) - startY;
+            // Use normalized distance too (works on any screen size)
+            const ndx = n.x - startNormX;
+            const ndy = n.y - startNormY;
+            const distPx = Math.sqrt(dx * dx + dy * dy);
+            const distN = Math.sqrt(ndx * ndx + ndy * ndy);
+            const dt = Date.now() - startTime;
+
+            // Lower threshold so short finger swipes still count
+            if (distPx < 8 && distN < 0.02) {
+                if (dt > 450) sendControl({ type: 'longpress', x: startNormX, y: startNormY });
+                else sendControl({ type: 'tap', x: startNormX, y: startNormY });
+            } else {
+                // Clamp endpoints and send swipe (left/right/up/down all work)
+                sendControl({
+                    type: 'swipe',
+                    x1: Math.max(0, Math.min(1, startNormX)),
+                    y1: Math.max(0, Math.min(1, startNormY)),
+                    x2: Math.max(0, Math.min(1, n.x)),
+                    y2: Math.max(0, Math.min(1, n.y)),
+                    duration: Math.min(Math.max(dt, 100), 500)
+                });
+            }
+        }
+
+        canvas.addEventListener('mousedown', onPointerDown);
+        canvas.addEventListener('mousemove', onPointerMove);
+        canvas.addEventListener('mouseup', onPointerUp);
+        canvas.addEventListener('mouseleave', () => { if (pointerDown) pointerDown = false; });
+        canvas.addEventListener('touchstart', onPointerDown, { passive: false });
+        canvas.addEventListener('touchmove', onPointerMove, { passive: false });
+        canvas.addEventListener('touchend', onPointerUp, { passive: false });
+        canvas.addEventListener('touchcancel', () => { pointerDown = false; });
+
+        document.getElementById('btnBack').onclick = () => sendControl({ type: 'back' });
+        document.getElementById('btnHome').onclick = () => sendControl({ type: 'home' });
+        document.getElementById('btnRecents').onclick = () => sendControl({ type: 'recents' });
+        document.getElementById('btnNotif').onclick = () => sendControl({ type: 'notifications' });
+
+        // One-tap directional swipes (edge-to-edge style)
+        function edgeSwipe(dir) {
+            const mid = 0.5;
+            const map = {
+                left:  { x1: 0.85, y1: mid, x2: 0.15, y2: mid },
+                right: { x1: 0.15, y1: mid, x2: 0.85, y2: mid },
+                up:    { x1: mid, y1: 0.75, x2: mid, y2: 0.25 },
+                down:  { x1: mid, y1: 0.25, x2: mid, y2: 0.75 }
+            };
+            const s = map[dir];
+            if (!s) return;
+            sendControl({ type: 'swipe', x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2, duration: 280 });
+        }
+        document.getElementById('btnSwipeLeft').onclick = () => edgeSwipe('left');
+        document.getElementById('btnSwipeRight').onclick = () => edgeSwipe('right');
+        document.getElementById('btnSwipeUp').onclick = () => edgeSwipe('up');
+        document.getElementById('btnSwipeDown').onclick = () => edgeSwipe('down');
+
+        btnControl.onclick = function() {
+            controlEnabled = !controlEnabled;
+            this.textContent = controlEnabled ? 'Control ON' : 'Control OFF';
+            this.classList.toggle('on', controlEnabled);
+            canvas.style.cursor = controlEnabled ? 'crosshair' : 'default';
+        };
+
+        document.getElementById('btnFit').onclick = function() {
+            displayMode = 'fit'; this.classList.add('on');
+            document.getElementById('btnStretch').classList.remove('on');
+            resizeCanvas();
+        };
+        document.getElementById('btnStretch').onclick = function() {
+            displayMode = 'stretch'; this.classList.add('on');
+            document.getElementById('btnFit').classList.remove('on');
+            resizeCanvas();
+        };
+        document.getElementById('btnFs').onclick = () => {
+            if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
+            else document.exitFullscreen();
+        };
+
+        document.getElementById('btnHideStats').onclick = function() {
+            statsHidden = !statsHidden;
+            [fpsStat, frameStat, resStat, latencyStat].forEach(el => {
+                el.classList.toggle('hidden-stat', statsHidden);
+            });
+            this.textContent = statsHidden ? 'Show stats' : 'Hide stats';
+            this.classList.toggle('on', statsHidden);
+        };
+
+        function selectDevice(id) {
+            id = (id || '').trim();
+            currentDeviceId = id;
+            deviceIdInput.value = id;
+            try { localStorage.setItem('monitor_deviceId', id); } catch (_) {}
+            socket.emit('select-device', id);
+            if (isStreaming) {
+                isStreaming = false;
+                btnStream.textContent = 'START';
+                btnStream.classList.remove('active');
+                socket.emit('stop-stream');
+            }
+            overlay.classList.remove('hidden');
+            overlayText.textContent = id ? 'Waiting for "' + id + '"...' : 'Enter Device ID and tap Watch';
+                    }
+
+        document.getElementById('btnSelect').onclick = () => selectDevice(deviceIdInput.value);
+        deviceIdInput.addEventListener('keydown', e => { if (e.key === 'Enter') selectDevice(deviceIdInput.value); });
+        deviceSelect.onchange = () => { if (deviceSelect.value) selectDevice(deviceSelect.value); };
+        document.getElementById('btnRefresh').onclick = () => socket.emit('register-dashboard');
+
+        btnStream.onclick = () => {
+            if (!currentDeviceId) {
+                overlayText.textContent = 'First enter Device ID and tap Watch';
+                return;
+            }
+            isStreaming = !isStreaming;
+            if (isStreaming) {
+                btnStream.textContent = 'STOP';
+                btnStream.classList.add('active');
+                socket.emit('start-stream');
+                frameCount = 0; fpsWindow = [];
+            } else {
+                btnStream.textContent = 'START';
+                btnStream.classList.remove('active');
+                socket.emit('stop-stream');
+                if (canvas.width > 0) ctx.clearRect(0, 0, canvas.width, canvas.height);
+                currentImage = null; needsDraw = false;
+                fpsStat.textContent = '-- fps';
+                frameStat.textContent = '0 frames';
+                latencyStat.textContent = 'lat: --';
+            }
+        };
+
+        function updateDeviceSelect(devices) {
+            const cur = deviceSelect.value;
+            deviceSelect.innerHTML = '<option value="">— Online —</option>';
+            devices.forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = d.deviceId;
+                opt.textContent = d.deviceId + ' ●';
+                deviceSelect.appendChild(opt);
+            });
+            if (cur && devices.some(d => d.deviceId === cur)) deviceSelect.value = cur;
+            else if (currentDeviceId && devices.some(d => d.deviceId === currentDeviceId))
+                deviceSelect.value = currentDeviceId;
+        }
+
+        function setStatus(state, text) {
+            dot.className = 'status-dot';
+            if (state === 'ok') dot.classList.add('ok');
+            else if (state === 'err') dot.classList.add('err');
+            statusText.textContent = text;
+        }
+        function escapeHtml(s) {
+            return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+
+        requestAnimationFrame(renderLoop);
+    })();
+    </script>
+</body>
+</html>

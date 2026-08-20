@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin — Screen Monitor</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a0a; color: #e0e0e0;
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            min-height: 100vh; padding: 20px;
+        }
+        h1 { font-size: 18px; margin-bottom: 6px; }
+        .sub { color: #666; font-size: 12px; margin-bottom: 20px; }
+        .stats {
+            display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px;
+        }
+        .stat-box {
+            background: #141414; border: 1px solid #222; border-radius: 8px;
+            padding: 14px 18px; min-width: 120px;
+        }
+        .stat-box .label { font-size: 11px; color: #777; }
+        .stat-box .value { font-size: 22px; font-weight: 600; color: #4caf50; margin-top: 4px; }
+        table {
+            width: 100%; border-collapse: collapse; background: #121212;
+            border-radius: 8px; overflow: hidden; border: 1px solid #222;
+        }
+        th, td { text-align: left; padding: 12px 14px; font-size: 13px; border-bottom: 1px solid #1e1e1e; }
+        th { background: #1a1a1a; color: #888; font-weight: 600; font-size: 11px; text-transform: uppercase; }
+        tr:hover td { background: #181818; }
+        .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #4caf50; margin-right: 6px; }
+        .id { font-family: monospace; font-weight: 600; color: #fff; }
+        .btn {
+            padding: 5px 12px; border: 1px solid #333; border-radius: 4px;
+            background: #1e1e1e; color: #bbb; font-size: 12px; cursor: pointer; text-decoration: none;
+        }
+        .btn:hover { background: #2a2a2a; border-color: #555; }
+        .btn.primary { background: #1565c0; border-color: #1565c0; color: #fff; }
+        .empty { color: #555; padding: 40px; text-align: center; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>Admin — All Devices</h1>
+            <p class="sub">Private panel · auto-refresh every 5s</p>
+        </div>
+        <div>
+            <a class="btn" href="/">← Dashboard</a>
+            <button class="btn primary" id="btnRefresh">Refresh</button>
+        </div>
+    </div>
+
+    <div class="stats">
+        <div class="stat-box"><div class="label">Online devices</div><div class="value" id="cntDevices">0</div></div>
+        <div class="stat-box"><div class="label">Dashboards</div><div class="value" id="cntDash">—</div></div>
+        <div class="stat-box"><div class="label">Frames relayed</div><div class="value" id="cntFrames">—</div></div>
+        <div class="stat-box"><div class="label">Uptime (s)</div><div class="value" id="cntUptime">—</div></div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Device ID</th>
+                <th>Model</th>
+                <th>Manufacturer</th>
+                <th>Phone</th>
+                <th>SDK</th>
+                <th>Connected</th>
+                <th>Last frame</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody id="tbody">
+            <tr><td colspan="8" class="empty">Loading...</td></tr>
+        </tbody>
+    </table>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+    (() => {
+        const tbody = document.getElementById('tbody');
+        const cntDevices = document.getElementById('cntDevices');
+        const cntDash = document.getElementById('cntDash');
+        const cntFrames = document.getElementById('cntFrames');
+        const cntUptime = document.getElementById('cntUptime');
+
+        function escapeHtml(s) {
+            return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+        function ago(ts) {
+            if (!ts) return '—';
+            const s = Math.round((Date.now() - ts) / 1000);
+            if (s < 60) return s + 's ago';
+            if (s < 3600) return Math.floor(s/60) + 'm ago';
+            return Math.floor(s/3600) + 'h ago';
+        }
+
+        function render(devices) {
+            cntDevices.textContent = devices.length;
+            if (!devices.length) {
+                tbody.innerHTML = '<tr><td colspan="8" class="empty">No devices online</td></tr>';
+                return;
+            }
+            tbody.innerHTML = devices.map(d => {
+                const model = d.model || '—';
+                const mfr = d.manufacturer || '—';
+                const phone = d.phone || '—';
+                const sdk = d.sdk != null ? d.sdk : '—';
+                return `<tr>
+                    <td><span class="dot"></span><span class="id">${escapeHtml(d.deviceId)}</span></td>
+                    <td>${escapeHtml(model)}</td>
+                    <td>${escapeHtml(mfr)}</td>
+                    <td>${escapeHtml(phone)}</td>
+                    <td>${escapeHtml(sdk)}</td>
+                    <td>${ago(d.connectedAt)}</td>
+                    <td>${ago(d.lastFrameAt)}</td>
+                    <td><a class="btn primary" href="/?id=${encodeURIComponent(d.deviceId)}">Watch</a></td>
+                </tr>`;
+            }).join('');
+        }
+
+        async function fetchHealth() {
+            try {
+                const r = await fetch('/health');
+                const j = await r.json();
+                if (j.devices) render(j.devices);
+                if (j.dashboardClients != null) cntDash.textContent = j.dashboardClients;
+                if (j.framesRelayed != null) cntFrames.textContent = j.framesRelayed;
+                if (j.uptime != null) cntUptime.textContent = Math.round(j.uptime);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        // Also socket for live updates
+        const socket = io(window.location.origin, { transports: ['websocket', 'polling'] });
+        socket.on('connect', () => socket.emit('register-dashboard'));
+        socket.on('device-list', (data) => {
+            render((data && data.devices) || []);
+        });
+
+        document.getElementById('btnRefresh').onclick = fetchHealth;
+        fetchHealth();
+        setInterval(fetchHealth, 5000);
+    })();
+    </script>
+</body>
+</html>
